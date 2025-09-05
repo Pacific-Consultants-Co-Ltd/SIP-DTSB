@@ -276,6 +276,90 @@
 		}
 	</style>
 
+	<style>
+		.mesh-label {
+			pointer-events: none;
+			text-align: center;
+		}
+
+		.mesh-label div {
+			background: rgba(255, 255, 255, 0.8);
+			border: 1px solid rgba(0, 0, 0, 0.15);
+			border-radius: 2px;
+			padding: 0px 1px;
+			font-size: 11px;
+			font-weight: bold;
+			color: #333;
+			box-shadow: none;
+			white-space: nowrap;
+			line-height: 1;
+			margin: 0;
+			display: inline-block;
+		}
+	</style>
+
+	<style>
+		/* Menu panel */
+		.landuse-panel {
+			display: none;
+			position: absolute;
+			top: 100px;
+			left: 10px;
+			min-width: 220px;
+			background: #fff;
+			border-radius: 8px;
+			border: 1px solid #ccc;
+			box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25);
+			padding: 16px;
+			z-index: 9999;
+			font-family: 'Segoe UI', sans-serif;
+			transition: opacity 0.2s ease;
+		}
+
+		/* Header */
+		.landuse-header {
+			font-size: 16px;
+			font-weight: 600;
+			margin-bottom: 10px;
+			color: #333;
+		}
+
+		/* Select dropdown */
+		.landuse-select {
+			width: 100%;
+			padding: 8px 10px;
+			font-size: 14px;
+			border-radius: 4px;
+			border: 1px solid #ccc;
+			appearance: none;
+			margin-bottom: 12px;
+			background: #f9f9f9;
+		}
+
+		/* Button */
+		.landuse-close {
+			display: inline-block;
+			padding: 8px 14px;
+			font-size: 14px;
+			background: #007bff;
+			color: white;
+			border: none;
+			border-radius: 4px;
+			cursor: pointer;
+			width: 100%;
+			transition: background 0.2s ease;
+		}
+
+		.landuse-close:hover {
+			background: #0056b3;
+		}
+
+		.landuse-header {
+			cursor: move;
+			user-select: none;
+		}
+	</style>
+
 </head>
 
 <body>
@@ -304,14 +388,11 @@
 						</ul>
 					</nav>
 				</div>
-
-
 				<h1 class="l-contents__tit">入力</h1>
 
 				<button type="button" class="l-fixed__open l-contents__useful c-btn js-fixed-open" data-fixed="useful">
 					便利機能
 				</button>
-
 			</header>
 			<form class="l-contents__main column02" action="results.html">
 				<input type="hidden" name="loading" value="true">
@@ -331,12 +412,25 @@
 										<span class="btn">路線</span>
 									</label>
 									<label class="l-contents__map-btn">
+										<input type="checkbox" id="loadMeshToggle">
+										<span class="btn">メッシュ表示</span>
+									</label>
+
+									<label class="l-contents__map-btn">
 										<input type="checkbox" id="data_passengers" name="data_passengers">
 										<span class="btn">乗降客数</span>
 									</label>
 									<label class="l-contents__map-btn">
 										<input type="checkbox" id="toggleBusRoutes">
 										<span class="btn">バス路線表示</span>
+									</label>
+									<label class="l-contents__map-btn">
+										<input type="checkbox" id="toggleFacilityHeatmap" checked>
+										<span class="btn">施設ヒートマップ</span>
+									</label>
+									<label class="l-contents__map-btn">
+										<input type="checkbox" id="toggleImportantFacilities">
+										<span class="btn">重要施設</span>
 									</label>
 								</dd>
 							</dl>
@@ -1813,10 +1907,11 @@
 						</button>
 						<label class="c-btn c-btn__contents blue"
 							style="cursor: pointer; flex: 1 1 auto; min-width: 150px; position: relative;">
-							<input type="file" id="networkUpload" accept=".gz" style="display: none;">
-							<span id="uploadLabelText">🚌 ネットワーク読込</span>
-							<span id="uploadSpinner" style="display: none; margin-left: 8px;">⏳</span>
+							<input type="file" id="folderUpload" webkitdirectory style="display: none;">
+							<span id="folderUploadLabel">📁 Upload MATSim Folder</span>
+							<span id="folderUploadSpinner" style="display: none; margin-left: 8px;">⏳</span>
 						</label>
+
 					</div>
 				</div>
 			</form>
@@ -1853,6 +1948,8 @@
 	<script src="https://cdn.jsdelivr.net/npm/proj4@2.19.7/dist/proj4.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 	<script src="app.js" defer></script>
+	<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+	<script src="landuse.js" defer></script>
 
 	<script>
 		const fareMinA = document.getElementById('fareRangeMin');
@@ -2371,6 +2468,66 @@
 ">
 		専用レーンを選択してください
 	</div>
+
+	<div id="landUseMenu" class="landuse-panel">
+		<div class="landuse-header" id="landUseMenuHeader">用途選択</div>
+		<select id="landUseSelect" class="landuse-select">
+			<option value="">-- 種別を選択 --</option>
+			<option value="park">🏞️ 公園</option>
+			<option value="school">🏫 学校</option>
+			<option value="shopping">🛍️ 商業施設</option>
+			<option value="hospital">🏥 病院</option>
+		</select>
+		<button onclick="closeLandUseMenu()" class="landuse-close">閉じる</button>
+	</div>
+
+	<script>
+		function makeDraggable(dragTarget, handle) {
+			let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+
+			handle.onmousedown = dragMouseDown;
+
+			function dragMouseDown(e) {
+				e.preventDefault();
+				pos3 = e.clientX;
+				pos4 = e.clientY;
+
+				document.onmouseup = closeDragElement;
+				document.onmousemove = elementDrag;
+			}
+
+			function elementDrag(e) {
+				e.preventDefault();
+
+				pos1 = pos3 - e.clientX;
+				pos2 = pos4 - e.clientY;
+
+				pos3 = e.clientX;
+				pos4 = e.clientY;
+
+				const top = dragTarget.offsetTop - pos2;
+				const left = dragTarget.offsetLeft - pos1;
+
+				dragTarget.style.top = `${top}px`;
+				dragTarget.style.left = `${left}px`;
+			}
+
+			function closeDragElement() {
+				document.onmouseup = null;
+				document.onmousemove = null;
+			}
+		}
+
+		document.addEventListener("DOMContentLoaded", () => {
+			const panel = document.getElementById("landUseMenu");
+			const header = document.getElementById("landUseMenuHeader");
+
+			if (panel && header) {
+				makeDraggable(panel, header);
+			}
+		});
+
+	</script>
 
 
 </body>
